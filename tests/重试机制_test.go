@@ -1,7 +1,6 @@
 package test
 
 import (
-	"testing"
 	"time"
 )
 
@@ -43,8 +42,4 @@ func Do(callback func() error, maxRetryTime int, delays ...time.Duration) error 
 		Callback:      callback,
 	}
 	return retryAble.Run()
-}
-
-func TestCaller1(t *testing.T) {
-
 }

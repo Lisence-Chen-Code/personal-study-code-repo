@@ -5,6 +5,4 @@ import (
 )
 
 func TestSyncMap(t *testing.T) {
-	//var sm sync.Pool
-	//sm.New
 }

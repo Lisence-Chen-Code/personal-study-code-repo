@@ -117,7 +117,7 @@ func TestWhiteList(t *testing.T) {
 		{"aaaaaaaaaabbbbbbbbbb", "abc", "aaaaaaaaaabbbbbbbbbb"},
 		{"a1b2c3", "abc", "abc"},
 		{"   ", "abc", ""},
-		{"a3a43a5a4a3a2a23a4a5a4a3a4", "a-z", "aaaaaaaaaaaa"},
+		{"a3a43a5a4a3a2a23a4a5a4a3a4zop", "a-z", "aaaaaaaaaaaazop"},
 	}
 	for _, test := range tests {
 		actual := WhiteList(test.param1, test.param2)
