@@ -1,56 +1,35 @@
 package test
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+)
 
-//简要的流水模型：producers -> transmitters -> consumers
+//根据通道的双向性进行解耦。
+//例：利用通道进行消息推送与消费
 
-type BaseModel struct {
+func SendMsg(ch chan<- string, msg string) {
+	ch <- msg
 }
 
-type Producer struct {
-	BaseModel
-}
-
-type Transmitter struct {
-	BaseModel
-}
-
-type Consumer struct {
-	BaseModel
-}
-
-type BaseModelIntfs interface {
-	Mission(func() chan interface{}) interface{}
-}
-
-func (p Producer) Mission(func() chan interface{}) interface{} {
-	return func() {}
-}
-
-func (t Transmitter) Mission() <-chan interface{} {
-	panic("implement me")
-}
-
-func (c Consumer) Mission() <-chan interface{} {
-	panic("implement me")
-}
-
-func StartMission() chan interface{} {
-	return nil
-}
-
-func TestName(t *testing.T) {
-	var inst Producer
-
-	doSth := func() chan interface{} {
-		out := make(chan interface{})
-		go func() {
-			defer close(out)
-			for _, n := range []int{1, 2, 3, 4} {
-				out <- n
-			}
-		}()
-		return out
+func ConsumeMsg(ch <-chan string) {
+	for one := range ch {
+		fmt.Println(one)
 	}
-	inst.Mission(doSth)
+}
+
+func TestGoRoutines(t *testing.T) {
+	ch := make(chan string, 50)
+	go func() {
+		for _, one := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "1", "1", "1", "1", "1", "1", "1", "1", "1"} {
+			go func(e string) {
+				SendMsg(ch, e)
+			}(one)
+		}
+	}()
+	go func() {
+		ConsumeMsg(ch)
+	}()
+	time.Sleep(5 * time.Second)
 }
