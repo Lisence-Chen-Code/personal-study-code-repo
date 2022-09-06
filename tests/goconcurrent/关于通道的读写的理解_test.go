@@ -2,11 +2,14 @@ package goconcurrent
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type Vehicle struct {
 	Type string
+	Cap  int //承载量
 }
 
 //通道的使用：
@@ -47,4 +50,73 @@ func TestInputClosedChannel(t *testing.T) {
 	close(ch)
 	ch <- &Vehicle{Type: "motorcycle"}
 	fmt.Println(<-ch)
+}
+
+//----------------------------------------------------------------------------------------------------------------
+
+//多协程对通道操作的理解：
+//上述将通道比作桥梁，那么协程就相当于小道，多个协程即多条小道
+
+//模拟开多个协程对通道进行io操作
+//运货：多辆车运货，将东西搬过桥
+func TestConcurrentOptChannel(t *testing.T) {
+	status := false
+	all := 0
+	ch := make(chan *Vehicle, 4) //桥长度4，宽度1，一次最多4辆车进来
+	defer close(ch)
+	for i := 0; i < 10; i++ {
+		go func(idx int) { //协程开启，模拟多条道路向通道驶入车辆
+			ch <- &Vehicle{
+				Type: "car",
+				Cap:  idx,
+			}
+		}(i)
+	}
+	for !status {
+		select {
+		case v := <-ch: //对搬到的货物进行处理
+			all += v.Cap
+		case <-time.After(200 * time.Millisecond): //这里控制阻塞200毫秒，即通道里面的东西已经被读完了时弹出
+			status = true
+			fmt.Println(fmt.Sprintf("总共运过来%v吨货物", all))
+			break
+		}
+	}
+}
+
+//运货：多辆车运货，将东西搬过桥，用单向通道来解耦io操作,这样可以取货的人可以精准地控制需要接口的运货的车辆
+func TestName(t *testing.T) {
+	all := int32(0)
+	ch := make(chan *Vehicle, 5) //开启一个通道，专门用来车辆搬运货物
+	closeChan := make(chan struct{}, 1)
+	var sendOpt = func(sendch chan<- *Vehicle, toSend *Vehicle) {
+		sendch <- toSend
+	}
+	var receiveOpt = func(recch <-chan *Vehicle, receiveTimes int) {
+		for i := 0; i < receiveTimes; i++ {
+			select {
+			case v := <-recch:
+				atomic.AddInt32(&all, int32(v.Cap))
+			case <-time.After(1 * time.Second):
+				closeChan <- struct{}{}
+			}
+		}
+	}
+	go func() {
+		for i := 0; i < 10; i++ {
+			go func(idx int) {
+				sendOpt(ch, &Vehicle{
+					Type: "car",
+					Cap:  idx,
+				})
+			}(i)
+		}
+	}()
+	go receiveOpt(ch, 20) //无论有多少车搬运，我这边想怎么接收就怎么接口，反正他们搬运的车阻塞堆积了而已
+	//io监听，当关闭通道有值时打印总的收到的货物量
+	select {
+	case <-closeChan:
+		fmt.Println(all)
+		fmt.Println("接收完毕")
+	}
 }
