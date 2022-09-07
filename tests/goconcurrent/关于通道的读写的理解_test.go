@@ -84,35 +84,45 @@ func TestConcurrentOptChannel(t *testing.T) {
 	}
 }
 
-//运货：多辆车运货，将东西搬过桥，用单向通道来解耦io操作,这样可以取货的人可以精准地控制需要接口的运货的车辆
-func TestName(t *testing.T) {
+//运货：多辆车运货，将东西搬过桥，用单向通道来解耦io操作,这样可以取货的人可以精准地控制需要接口的运货的车辆，将搬运和接收解耦开
+func TestDecouplingIO(t *testing.T) {
 	all := int32(0)
 	ch := make(chan *Vehicle, 5) //开启一个通道，专门用来车辆搬运货物
 	closeChan := make(chan struct{}, 1)
-	var sendOpt = func(sendch chan<- *Vehicle, toSend *Vehicle) {
-		sendch <- toSend
+	defer close(closeChan)
+	recevChan := make(chan struct{}, 1) //控制消费者不需要再生产东西的回滚信号通道
+	defer close(recevChan)
+	var sendOpt = func(sendch chan<- *Vehicle, genTimes int) {
+		sendch <- &Vehicle{} //添加初始信号，开启发送操作
+		for i := 0; i < genTimes; i++ {
+			select {
+			case <-recevChan: //当成功完成一次接收操作之后，向接收通道发送信号，此处监听，有接收到信号才需要继续发送
+				sendch <- &Vehicle{
+					Type: "car",
+					Cap:  i + 1,
+				}
+			case <-time.After(2 * time.Second):
+				fmt.Println("太久没人找我生产东西了，没什么事我就先挂了")
+			}
+		}
 	}
 	var receiveOpt = func(recch <-chan *Vehicle, receiveTimes int) {
 		for i := 0; i < receiveTimes; i++ {
 			select {
 			case v := <-recch:
 				atomic.AddInt32(&all, int32(v.Cap))
-			case <-time.After(1 * time.Second):
+				recevChan <- struct{}{}
+			case <-time.After(2000 * time.Millisecond): //超时关闭处理
 				closeChan <- struct{}{}
+				return
 			}
 		}
+		closeChan <- struct{}{} //流程结束，也需要退出线程
 	}
-	go func() {
-		for i := 0; i < 10; i++ {
-			go func(idx int) {
-				sendOpt(ch, &Vehicle{
-					Type: "car",
-					Cap:  idx,
-				})
-			}(i)
-		}
-	}()
-	go receiveOpt(ch, 20) //无论有多少车搬运，我这边想怎么接收就怎么接口，反正他们搬运的车阻塞堆积了而已
+	//搬运操作，即生产者
+	go sendOpt(ch, 200)
+	//接收操作，即消费者
+	go receiveOpt(ch, 3) //无论有多少车搬运，我这边想怎么接收就怎么接口
 	//io监听，当关闭通道有值时打印总的收到的货物量
 	select {
 	case <-closeChan:
@@ -120,3 +130,5 @@ func TestName(t *testing.T) {
 		fmt.Println("接收完毕")
 	}
 }
+
+//
