@@ -2,6 +2,7 @@ package goconcurrent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -166,16 +167,16 @@ func TestConcurrentService(t *testing.T) {
 	type Mission struct {
 		Index    int
 		Name     string
-		TodoFunc func(a int) int
+		TodoFunc func(a int) (int, error)
 	}
-	todoFunc := func(a int) int {
+	todoFunc := func(a int) (int, error) {
 		//假设在第1000个任务时发生报错
 		if a == 1000 {
 			cancelFunc()
-			return 0
+			return 0, errors.New("unexpected error occurred")
 		}
 		//假设每个任务都是计算平方值
-		return a * a
+		return a * a, nil
 	}
 	ch := make(chan *Mission, 300)
 	defer close(ch)
@@ -207,12 +208,16 @@ func TestConcurrentService(t *testing.T) {
 			select {
 			case <-ctx.Done():
 				wg.Add(hasDoneCounter - 30000)
-				fmt.Println(fmt.Sprintf("执行任务出现错误"))
 				return
 			default:
 				hasDoneCounter++
 				wg.Done()
-				fmt.Println(fmt.Sprintf("处理任务%v，任务执行结果：%v", one.Name, one.TodoFunc(one.Index)))
+				res, err := one.TodoFunc(one.Index)
+				if err != nil {
+					fmt.Println(fmt.Sprintf("处理%v出现错误%s", one.Name, err.Error()))
+				} else {
+					fmt.Println(fmt.Sprintf("处理%v，任务执行结果：%v", one.Name, res))
+				}
 			}
 		}
 	}()
