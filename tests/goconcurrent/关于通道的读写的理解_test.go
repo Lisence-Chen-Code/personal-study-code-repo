@@ -171,7 +171,7 @@ func TestConcurrentService(t *testing.T) {
 	}
 	todoFunc := func(a int) (int, error) {
 		//假设在第1000个任务时发生报错
-		if a == 1000 {
+		if a == 33333 {
 			cancelFunc()
 			return 0, errors.New("unexpected error occurred")
 		}
@@ -217,6 +217,9 @@ func TestConcurrentService(t *testing.T) {
 					fmt.Println(fmt.Sprintf("处理%v出现错误%s", one.Name, err.Error()))
 				} else {
 					fmt.Println(fmt.Sprintf("处理%v，任务执行结果：%v", one.Name, res))
+				}
+				if hasDoneCounter == 30000 { //任务执行全部成功，退出main主线程
+					cancelFunc()
 				}
 			}
 		}
