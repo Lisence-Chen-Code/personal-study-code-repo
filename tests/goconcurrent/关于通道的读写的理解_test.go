@@ -162,6 +162,7 @@ func TestDecouplingIO(t *testing.T) {
 }
 
 //正常处理需要开并发执行的任务:1.等待结果回调；2.某个任务执行失败，剩余待执行的任务不要再执行
+//Notes: 利用上下文可以同时停止整个程序中的并发操作
 func TestConcurrentService(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	type Mission struct {
