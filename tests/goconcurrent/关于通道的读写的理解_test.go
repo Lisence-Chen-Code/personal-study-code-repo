@@ -229,8 +229,8 @@ func TestConcurrentService(t *testing.T) {
 	fmt.Println("任务执行完毕")
 	for {
 		select {
-		case v := <-ctx.Done():
-			fmt.Println(v) //从关闭的通道，只会拿回零值，因此可以利用这一点来控制监听多个地方的停止
+		case v := <-ctx.Done(): //refer to notes:  Done returns a channel that's closed when work done on behalf of this context should be canceled.
+			fmt.Println(v) //即在调用取消方法后，返回一个关闭的通道。而从关闭的通道，只会拿回零值，因此可以利用这一点来用io控制监听多个地方的停止
 			fmt.Println("上下文拿到零值，主线程退出")
 			return
 		default:
