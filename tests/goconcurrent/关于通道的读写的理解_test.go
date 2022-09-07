@@ -2,6 +2,7 @@ package goconcurrent
 
 import (
 	"fmt"
+	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -102,32 +103,59 @@ func TestDecouplingIO(t *testing.T) {
 					Cap:  i + 1,
 				}
 			case <-time.After(2 * time.Second):
-				fmt.Println("太久没人找我生产东西了，没什么事我就先挂了")
+				fmt.Println("生产者：太久没人找我生产东西了，没什么事我就先挂了")
 			}
 		}
 	}
-	var receiveOpt = func(recch <-chan *Vehicle, receiveTimes int) {
+	var receiveOpt = func(recch <-chan *Vehicle, receiveTimes int) int32 {
+		curOptTotal := int32(0)
 		for i := 0; i < receiveTimes; i++ {
 			select {
 			case v := <-recch:
 				atomic.AddInt32(&all, int32(v.Cap))
+				atomic.AddInt32(&curOptTotal, int32(v.Cap))
 				recevChan <- struct{}{}
 			case <-time.After(2000 * time.Millisecond): //超时关闭处理
 				closeChan <- struct{}{}
-				return
+				return curOptTotal
 			}
 		}
 		closeChan <- struct{}{} //流程结束，也需要退出线程
+		return curOptTotal
 	}
 	//搬运操作，即生产者
-	go sendOpt(ch, 200)
+	go sendOpt(ch, 20000)
 	//接收操作，即消费者
-	go receiveOpt(ch, 3) //无论有多少车搬运，我这边想怎么接收就怎么接口
+	//case1 :go receiveOpt(ch, 3) //无论有多少车搬运，我这边想怎么接收就怎么接口
+	//case2:
+	//go func() {//模拟消费者1
+	//	fmt.Println(fmt.Sprintf("消费者1本次接收了%v货物", receiveOpt(ch, 300)))
+	//}()
+	//
+	//go func() {//模拟消费者2
+	//	fmt.Println(fmt.Sprintf("消费者2本次接收了%v货物", receiveOpt(ch, 100)))
+	//}()
+	//case3: 模拟有多个消费者
+	consumers := make(map[string]func() int32, 0)
+	for i := 0; i < 100; i++ {
+		consumers[fmt.Sprintf("消费者%v", i+1)] = func() int32 {
+			return receiveOpt(ch, rand.Intn(400))
+		}
+	}
+	for name, doFunc := range consumers {
+		go func(n string, f func() int32) {
+			fmt.Println(fmt.Sprintf("%s本次接收了%v货物", n, f()))
+		}(name, doFunc)
+	}
 	//io监听，当关闭通道有值时打印总的收到的货物量
-	select {
-	case <-closeChan:
-		fmt.Println(all)
-		fmt.Println("接收完毕")
+	endSta := false
+	for !endSta {
+		select {
+		case <-closeChan:
+		case <-time.After(3 * time.Second):
+			fmt.Println(fmt.Sprintf("接收完毕，消费者总共接收了%v货物", all))
+			endSta = true
+		}
 	}
 }
 
