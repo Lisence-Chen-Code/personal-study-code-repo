@@ -2,7 +2,6 @@ package goconcurrent
 
 import (
 	"fmt"
-	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -139,7 +138,7 @@ func TestDecouplingIO(t *testing.T) {
 	consumers := make(map[string]func() int32, 0)
 	for i := 0; i < 100; i++ {
 		consumers[fmt.Sprintf("消费者%v", i+1)] = func() int32 {
-			return receiveOpt(ch, rand.Intn(400))
+			return receiveOpt(ch, 50)
 		}
 	}
 	for name, doFunc := range consumers {
