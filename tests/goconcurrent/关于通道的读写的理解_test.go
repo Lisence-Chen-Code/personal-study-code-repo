@@ -1,7 +1,9 @@
 package goconcurrent
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -101,7 +103,7 @@ func TestDecouplingIO(t *testing.T) {
 					Type: "car",
 					Cap:  i + 1,
 				}
-			case <-time.After(2 * time.Second):
+			case <-time.After(60 * time.Second):
 				fmt.Println("生产者：太久没人找我生产东西了，没什么事我就先挂了")
 			}
 		}
@@ -126,7 +128,7 @@ func TestDecouplingIO(t *testing.T) {
 	go sendOpt(ch, 20000)
 	//接收操作，即消费者
 	//case1 :go receiveOpt(ch, 3) //无论有多少车搬运，我这边想怎么接收就怎么接口
-	//case2:
+	//case2: 模拟两个消费者
 	//go func() {//模拟消费者1
 	//	fmt.Println(fmt.Sprintf("消费者1本次接收了%v货物", receiveOpt(ch, 300)))
 	//}()
@@ -134,7 +136,7 @@ func TestDecouplingIO(t *testing.T) {
 	//go func() {//模拟消费者2
 	//	fmt.Println(fmt.Sprintf("消费者2本次接收了%v货物", receiveOpt(ch, 100)))
 	//}()
-	//case3: 模拟有多个消费者
+	//case3: 模拟有超多个消费者
 	consumers := make(map[string]func() int32, 0)
 	for i := 0; i < 100; i++ {
 		consumers[fmt.Sprintf("消费者%v", i+1)] = func() int32 {
@@ -151,11 +153,79 @@ func TestDecouplingIO(t *testing.T) {
 	for !endSta {
 		select {
 		case <-closeChan:
-		case <-time.After(3 * time.Second):
+		case <-time.After(66 * time.Second):
 			fmt.Println(fmt.Sprintf("接收完毕，消费者总共接收了%v货物", all))
 			endSta = true
 		}
 	}
 }
 
-//
+//正常处理需要开并发执行的任务:1.等待结果回调；2.某个任务执行失败，剩余待执行的任务不要再执行
+func TestConcurrentService(t *testing.T) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	type Mission struct {
+		Index    int
+		Name     string
+		TodoFunc func(a int) int
+	}
+	todoFunc := func(a int) int {
+		//假设在第1000个任务时发生报错
+		if a == 1000 {
+			cancelFunc()
+			return 0
+		}
+		//假设每个任务都是计算平方值
+		return a * a
+	}
+	ch := make(chan *Mission, 300)
+	defer close(ch)
+	var wg sync.WaitGroup
+	wg.Add(30000)
+	//构造一个待处理的任务列表
+	missions := []*Mission{}
+	for i := 0; i < 30000; i++ {
+		missions = append(missions, &Mission{
+			Index:    i + 1,
+			Name:     fmt.Sprintf("任务%v", i+1),
+			TodoFunc: todoFunc,
+		})
+	}
+	//开启任务通道，控制并发处理任务
+	go func() {
+		for _, one := range missions {
+			select {
+			case <-ctx.Done(): //结束
+				return
+			default:
+				ch <- one
+			}
+		}
+	}()
+	go func() {
+		hasDoneCounter := 0
+		for one := range ch {
+			select {
+			case <-ctx.Done():
+				wg.Add(hasDoneCounter - 30000)
+				fmt.Println(fmt.Sprintf("执行任务出现错误"))
+				return
+			default:
+				hasDoneCounter++
+				wg.Done()
+				fmt.Println(fmt.Sprintf("处理任务%v，任务执行结果：%v", one.Name, one.TodoFunc(one.Index)))
+			}
+		}
+	}()
+	wg.Wait()
+	fmt.Println("任务执行完毕")
+	for {
+		select {
+		case v := <-ctx.Done():
+			fmt.Println(v) //从关闭的通道，只会拿回零值，因此可以利用这一点来控制监听多个地方的停止
+			fmt.Println("上下文拿到零值，主线程退出")
+			return
+		default:
+
+		}
+	}
+}
