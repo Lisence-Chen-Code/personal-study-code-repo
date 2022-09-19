@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -164,6 +163,8 @@ func TestDecouplingIO(t *testing.T) {
 //正常处理需要开并发执行的任务:1.等待结果回调；2.某个任务执行失败，剩余待执行的任务不要再执行
 //Notes: 利用上下文可以同时停止整个程序中的并发操作
 func TestConcurrentService(t *testing.T) {
+	tempCh := make(chan int, 1)
+	tempCh <- 1
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	type Mission struct {
 		Index    int
@@ -172,17 +173,14 @@ func TestConcurrentService(t *testing.T) {
 	}
 	todoFunc := func(a int) (int, error) {
 		//假设在第1000个任务时发生报错
-		if a == 33333 {
-			cancelFunc()
+		if a == 333 {
 			return 0, errors.New("unexpected error occurred")
 		}
 		//假设每个任务都是计算平方值
 		return a * a, nil
 	}
-	ch := make(chan *Mission, 300)
+	ch := make(chan *Mission, 6)
 	defer close(ch)
-	var wg sync.WaitGroup
-	wg.Add(30000)
 	//构造一个待处理的任务列表
 	missions := []*Mission{}
 	for i := 0; i < 30000; i++ {
@@ -204,28 +202,37 @@ func TestConcurrentService(t *testing.T) {
 		}
 	}()
 	go func() {
-		hasDoneCounter := 0
+		hasDoneCounter := int32(0)
 		for one := range ch {
-			select {
-			case <-ctx.Done():
-				wg.Add(hasDoneCounter - 30000)
-				return
-			default:
-				hasDoneCounter++
-				wg.Done()
-				res, err := one.TodoFunc(one.Index)
-				if err != nil {
-					fmt.Println(fmt.Sprintf("处理%v出现错误%s", one.Name, err.Error()))
-				} else {
-					fmt.Println(fmt.Sprintf("处理%v，任务执行结果：%v", one.Name, res))
+			go func(one *Mission) {
+				select {
+				case temp := <-tempCh:
+					if temp != 0 {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							res, err := one.TodoFunc(one.Index)
+							if err != nil {
+								fmt.Println(fmt.Sprintf("处理%v出现错误%s", one.Name, err.Error()))
+								cancelFunc()
+								close(tempCh)
+								return
+							} else {
+								atomic.AddInt32(&hasDoneCounter, 1)
+								fmt.Println(fmt.Sprintf("处理%v，任务执行结果：%v", one.Name, res))
+								tempCh <- 1
+							}
+							if hasDoneCounter == int32(len(missions)) { //任务执行全部成功，退出main主线程
+								cancelFunc()
+								close(tempCh)
+							}
+						}
+					}
 				}
-				if hasDoneCounter == 30000 { //任务执行全部成功，退出main主线程
-					cancelFunc()
-				}
-			}
+			}(one)
 		}
 	}()
-	wg.Wait()
 	fmt.Println("任务执行完毕")
 	for {
 		select {
