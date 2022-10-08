@@ -14,8 +14,7 @@ func (t *temp) Add(elem int) *temp {
 }
 
 func TestDefer(t *testing.T) {
-	//打印：4 5 3 6
 	tt := &temp{}
-	defer tt.Add(4).Add(5).Add(6)
-	tt.Add(3)
+	defer tt.Add(1).Add(2).Add(3).Add(4)
+	tt.Add(5)
 }
